@@ -23,7 +23,7 @@ async function spawnClaude(command, options = {}, ws) {
     
     // Add print flag with command if we have a command
     if (command && command.trim()) {
-      args.push('--print', `"${command.replace(/"/g, '\\"')}"`);
+      args.push('--print', command.trim());
     }
     
     // Use cwd (actual project directory) instead of projectPath (Claude's metadata directory)
@@ -65,7 +65,7 @@ async function spawnClaude(command, options = {}, ws) {
           
           // Update the command in args
           const printIndex = args.indexOf('--print');
-          if (printIndex !== -1 && args[printIndex + 1] === command) {
+          if (printIndex !== -1) {
             args[printIndex + 1] = modifiedCommand;
           }
         }
