@@ -13,6 +13,14 @@ import * as pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
+import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
+import { spawnClaude, abortClaudeSession } from './claude-sdk.js';
+import gitRoutes from './routes/git.js';
+import authRoutes from './routes/auth.js';
+import mcpRoutes from './routes/mcp.js';
+import { initializeDatabase } from './database/db.js';
+import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
+
 // Import types
 import type { 
   ExtendedWebSocket, 
@@ -45,14 +53,6 @@ try {
 console.log('PORT from env:', process.env.PORT);
 
 // Import modules
-
-import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
-import { spawnClaude, abortClaudeSession } from './claude-cli.js';
-import gitRoutes from './routes/git.js';
-import authRoutes from './routes/auth.js';
-import mcpRoutes from './routes/mcp.js';
-import { initializeDatabase } from './database/db.js';
-import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 
 // File system watcher for projects folder
 let projectsWatcher: ProjectsWatcher = null;
@@ -117,7 +117,7 @@ async function setupProjectsWatcher() {
             }
           });
           
-        } catch (error) {
+        } catch (error: any) {
           console.error('❌ Error handling project changes:', error);
         }
       }, 300); // 300ms debounce (slightly faster than before)
@@ -136,7 +136,7 @@ async function setupProjectsWatcher() {
       .on('ready', () => {
       });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Failed to setup projects watcher:', error);
   }
 }
@@ -205,7 +205,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
   try {
     const projects = await getProjects();
     res.json(projects);
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -215,7 +215,7 @@ app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, re
     const { limit = 5, offset = 0 } = req.query;
     const result = await getSessions(req.params.projectName, parseInt(String(limit)), parseInt(String(offset)));
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -226,7 +226,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/messages', authenticateT
     const { projectName, sessionId } = req.params;
     const messages = await getSessionMessages(projectName, sessionId);
     res.json({ messages });
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -237,7 +237,7 @@ app.put('/api/projects/:projectName/rename', authenticateToken, async (req, res)
     const { displayName } = req.body;
     await renameProject(req.params.projectName, displayName);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -248,7 +248,7 @@ app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, 
     const { projectName, sessionId } = req.params;
     await deleteSession(projectName, sessionId);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -259,7 +259,7 @@ app.delete('/api/projects/:projectName', authenticateToken, async (req, res) => 
     const { projectName } = req.params;
     await deleteProject(projectName);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -275,7 +275,7 @@ app.post('/api/projects/create', authenticateToken, async (req, res) => {
     
     const project = await addProjectManually(projectPath.trim());
     res.json({ success: true, project });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating project:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
@@ -298,7 +298,7 @@ app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     
     const content = await fsPromises.readFile(filePath, 'utf8');
     res.json({ content, path: filePath });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error reading file:', error);
     if ((error as any).code === 'ENOENT') {
       res.status(404).json({ error: 'File not found' });
@@ -329,7 +329,7 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
     // Check if file exists
     try {
       await fsPromises.access(filePath);
-    } catch (error) {
+    } catch (error: any) {
       return res.status(404).json({ error: 'File not found' });
     }
     
@@ -348,7 +348,7 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
       }
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error serving binary file:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
@@ -392,7 +392,7 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
       path: filePath,
       message: 'File saved successfully' 
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error saving file:', error);
     if ((error as any).code === 'ENOENT') {
       res.status(404).json({ error: 'File or directory not found' });
@@ -413,7 +413,7 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
     let actualPath;
     try {
       actualPath = await extractProjectDirectory(req.params.projectName);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error extracting project directory:', error);
       // Fallback to simple dash replacement
       actualPath = req.params.projectName.replace(/-/g, '/');
@@ -429,7 +429,7 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
     const files = await getFileTree(actualPath, 3, 0, true);
     const hiddenFiles = files.filter(f => f.name.startsWith('.'));
     res.json(files);
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ File tree error:', error instanceof Error ? error.message : error);
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
@@ -437,7 +437,7 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
 
 // WebSocket connection handler that routes based on URL path
 wss.on('connection', (ws, request) => {
-  const url = request.url;
+  const url = request.url || '';
   console.log('🔗 Client connected to:', url);
   
   // Parse URL to get pathname without query parameters
@@ -479,7 +479,7 @@ function handleChatConnection(ws: ExtendedWebSocket) {
           success
         }));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Chat WebSocket error:', error.message);
       ws.send(JSON.stringify({
         type: 'error',
@@ -557,7 +557,7 @@ function handleShellConnection(ws: ExtendedWebSocket) {
           console.log('🟢 Shell process started with PTY, PID:', shellProcess.pid);
           
           // Handle data output
-          shellProcess.onData((data) => {
+          shellProcess.onData((data: any) => {
             if (ws.readyState === ws.OPEN) {
               let outputData = data;
               
@@ -603,7 +603,7 @@ function handleShellConnection(ws: ExtendedWebSocket) {
           });
           
           // Handle process exit
-          shellProcess.onExit((exitCode) => {
+          shellProcess.onExit((exitCode: any) => {
             console.log('🔚 Shell process exited with code:', exitCode.exitCode, 'signal:', exitCode.signal);
             if (ws.readyState === ws.OPEN) {
               ws.send(JSON.stringify({
@@ -614,7 +614,7 @@ function handleShellConnection(ws: ExtendedWebSocket) {
             shellProcess = null;
           });
           
-        } catch (spawnError) {
+        } catch (spawnError: any) {
           console.error('❌ Error spawning process:', spawnError);
           ws.send(JSON.stringify({
             type: 'output',
@@ -627,7 +627,7 @@ function handleShellConnection(ws: ExtendedWebSocket) {
         if (shellProcess && shellProcess.write) {
           try {
             shellProcess.write(data.data);
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error writing to shell:', error);
           }
         } else {
@@ -640,7 +640,7 @@ function handleShellConnection(ws: ExtendedWebSocket) {
           shellProcess.resize(data.cols, data.rows);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Shell WebSocket error:', error.message);
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({
@@ -729,8 +729,10 @@ app.post('/api/transcribe', authenticateToken, async (req, res) => {
         
         // Handle different enhancement modes
         try {
-          const OpenAI = (await import('openai')).default;
-          const openai = new OpenAI({ apiKey });
+          // TODO: Install openai package to enable voice transcription enhancement
+          // const OpenAI = (await import('openai')).default;
+          // const openai = new OpenAI({ apiKey });
+          throw new Error('OpenAI package not installed. Voice transcription enhancement is currently disabled.');
           
           let prompt, systemMessage, temperature = 0.7, maxTokens = 800;
           
@@ -780,19 +782,20 @@ Agent instructions:`;
           }
           
           // Only make GPT call if we have a prompt
-          if (prompt) {
-            const completion = await openai.chat.completions.create({
-              model: 'gpt-4o-mini',
-              messages: [
-                { role: 'system', content: systemMessage },
-                { role: 'user', content: prompt }
-              ],
-              temperature: temperature,
-              max_tokens: maxTokens
-            });
-            
-            transcribedText = completion.choices[0].message.content || transcribedText;
-          }
+          // TODO: Uncomment when openai package is installed
+          // if (prompt) {
+          //   const completion = await openai.chat.completions.create({
+          //     model: 'gpt-4o-mini',
+          //     messages: [
+          //       { role: 'system', content: systemMessage },
+          //       { role: 'user', content: prompt }
+          //     ],
+          //     temperature: temperature,
+          //     max_tokens: maxTokens
+          //   });
+          //   
+          //   transcribedText = completion.choices[0].message.content || transcribedText;
+          // }
           
         } catch (gptError) {
           console.error('GPT processing error:', gptError);
@@ -801,12 +804,12 @@ Agent instructions:`;
         
         res.json({ text: transcribedText });
         
-      } catch (error) {
+      } catch (error: any) {
         console.error('Transcription error:', error);
         res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Endpoint error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -884,14 +887,14 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
         );
         
         res.json({ images: processedImages });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error processing images:', error);
         // Clean up any remaining files
         await Promise.all((req.files as any[]).map((f: any) => fs.unlink(f.path).catch(() => {})));
         res.status(500).json({ error: 'Failed to process images' });
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in image upload endpoint:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -959,7 +962,7 @@ async function getFileTree(dirPath: string, maxDepth = 3, currentDepth = 0, show
       } catch (statError) {
         // If stat fails, provide default values
         item.size = 0;
-        item.modified = null;
+        item.modified = undefined;
         item.permissions = '000';
         item.permissionsRwx = '---------';
       }
@@ -978,7 +981,7 @@ async function getFileTree(dirPath: string, maxDepth = 3, currentDepth = 0, show
       
       items.push(item);
     }
-  } catch (error) {
+  } catch (error: any) {
     // Only log non-permission errors to avoid spam
     if (error.code !== 'EACCES' && error.code !== 'EPERM') {
       console.error('Error reading directory:', error);
@@ -1008,7 +1011,7 @@ async function startServer() {
       // Start watching the projects folder for changes
       await setupProjectsWatcher(); // Re-enabled with better-sqlite3
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
