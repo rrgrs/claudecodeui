@@ -5,7 +5,7 @@ import { userDb } from '../database/db.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'claude-ui-dev-secret-change-in-production';
 
 // Optional API key middleware
-const validateApiKey = (req, res, next) => {
+const validateApiKey = (req: any, res: any, next: any) => {
   // Skip API key validation if not configured
   if (!process.env.API_KEY) {
     return next();
@@ -19,7 +19,7 @@ const validateApiKey = (req, res, next) => {
 };
 
 // JWT authentication middleware
-const authenticateToken = async (req, res, next) => {
+const authenticateToken = async (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -31,7 +31,7 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     
     // Verify user still exists and is active
-    const user = userDb.getUserById(decoded.userId);
+    const user = userDb.getUserById((decoded as any).userId);
     if (!user) {
       return res.status(401).json({ error: 'Invalid token. User not found.' });
     }
@@ -45,7 +45,7 @@ const authenticateToken = async (req, res, next) => {
 };
 
 // Generate JWT token (never expires)
-const generateToken = (user) => {
+const generateToken = (user: any) => {
   return jwt.sign(
     { 
       userId: user.id, 
@@ -57,7 +57,7 @@ const generateToken = (user) => {
 };
 
 // WebSocket authentication function
-const authenticateWebSocket = (token) => {
+const authenticateWebSocket = (token: string | undefined) => {
   if (!token) {
     return null;
   }

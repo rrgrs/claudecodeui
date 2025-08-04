@@ -21,7 +21,7 @@ const initializeDatabase = async () => {
     db.exec(initSQL);
     console.log('Database initialized successfully');
   } catch (error) {
-    console.error('Error initializing database:', error.message);
+    console.error('Error initializing database:', error instanceof Error ? error.message : error);
     throw error;
   }
 };
@@ -31,7 +31,7 @@ const userDb = {
   // Check if any users exist
   hasUsers: () => {
     try {
-      const row = db.prepare('SELECT COUNT(*) as count FROM users').get();
+      const row = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
       return row.count > 0;
     } catch (err) {
       throw err;
@@ -39,7 +39,7 @@ const userDb = {
   },
 
   // Create a new user
-  createUser: (username, passwordHash) => {
+  createUser: (username: string, passwordHash: string) => {
     try {
       const stmt = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
       const result = stmt.run(username, passwordHash);
@@ -50,7 +50,7 @@ const userDb = {
   },
 
   // Get user by username
-  getUserByUsername: (username) => {
+  getUserByUsername: (username: string) => {
     try {
       const row = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username);
       return row;
@@ -60,7 +60,7 @@ const userDb = {
   },
 
   // Update last login time
-  updateLastLogin: (userId) => {
+  updateLastLogin: (userId: number) => {
     try {
       db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(userId);
     } catch (err) {
@@ -69,7 +69,7 @@ const userDb = {
   },
 
   // Get user by ID
-  getUserById: (userId) => {
+  getUserById: (userId: number) => {
     try {
       const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
       return row;

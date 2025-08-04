@@ -3,6 +3,25 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import express, { Request, Response } from 'express';
+import { WebSocketServer, WebSocket } from 'ws';
+import http from 'http';
+import cors from 'cors';
+import { promises as fsPromises } from 'fs';
+import os from 'os';
+import * as pty from 'node-pty';
+import fetch from 'node-fetch';
+import mime from 'mime-types';
+
+// Import types
+import type { 
+  ExtendedWebSocket, 
+  WebSocketRequest, 
+  ProjectsWatcher,
+  FileNode,
+  ClaudeSpawnOptions,
+  ShellInitOptions
+} from './types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,22 +38,13 @@ try {
       }
     }
   });
-} catch (e) {
+} catch (e: any) {
   console.log('No .env file found or error reading it:', e.message);
 }
 
 console.log('PORT from env:', process.env.PORT);
 
-import express from 'express';
-import { WebSocketServer } from 'ws';
-import http from 'http';
-import cors from 'cors';
-import { promises as fsPromises } from 'fs';
-import { spawn } from 'child_process';
-import os from 'os';
-import pty from 'node-pty';
-import fetch from 'node-fetch';
-import mime from 'mime-types';
+// Import modules
 
 import { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache } from './projects.js';
 import { spawnClaude, abortClaudeSession } from './claude-cli.js';
@@ -45,13 +55,13 @@ import { initializeDatabase } from './database/db.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 
 // File system watcher for projects folder
-let projectsWatcher = null;
-const connectedClients = new Set();
+let projectsWatcher: ProjectsWatcher = null;
+const connectedClients = new Set<ExtendedWebSocket>();
 
 // Setup file system watcher for Claude projects folder using chokidar
 async function setupProjectsWatcher() {
   const chokidar = (await import('chokidar')).default;
-  const claudeProjectsPath = path.join(process.env.HOME, '.claude', 'projects');
+  const claudeProjectsPath = path.join(process.env.HOME || '', '.claude', 'projects');
   
   if (projectsWatcher) {
     projectsWatcher.close();
@@ -80,8 +90,8 @@ async function setupProjectsWatcher() {
     });
     
     // Debounce function to prevent excessive notifications
-    let debounceTimer;
-    const debouncedUpdate = async (eventType, filePath) => {
+    let debounceTimer: NodeJS.Timeout;
+    const debouncedUpdate = async (eventType: string, filePath: string) => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
         try {
@@ -115,12 +125,12 @@ async function setupProjectsWatcher() {
     
     // Set up event listeners
     projectsWatcher
-      .on('add', (filePath) => debouncedUpdate('add', filePath))
-      .on('change', (filePath) => debouncedUpdate('change', filePath))
-      .on('unlink', (filePath) => debouncedUpdate('unlink', filePath))
-      .on('addDir', (dirPath) => debouncedUpdate('addDir', dirPath))
-      .on('unlinkDir', (dirPath) => debouncedUpdate('unlinkDir', dirPath))
-      .on('error', (error) => {
+      .on('add', (filePath: string) => debouncedUpdate('add', filePath))
+      .on('change', (filePath: string) => debouncedUpdate('change', filePath))
+      .on('unlink', (filePath: string) => debouncedUpdate('unlink', filePath))
+      .on('addDir', (dirPath: string) => debouncedUpdate('addDir', dirPath))
+      .on('unlinkDir', (dirPath: string) => debouncedUpdate('unlinkDir', dirPath))
+      .on('error', (error: unknown) => {
         console.error('❌ Chokidar watcher error:', error);
       })
       .on('ready', () => {
@@ -138,7 +148,7 @@ const server = http.createServer(app);
 // Single WebSocket server that handles both paths
 const wss = new WebSocketServer({ 
   server,
-  verifyClient: (info) => {
+  verifyClient: (info: any) => {
     console.log('WebSocket connection attempt to:', info.req.url);
     
     // Extract token from query parameters or headers
@@ -155,7 +165,7 @@ const wss = new WebSocketServer({
     
     // Store user info in the request for later use
     info.req.user = user;
-    console.log('✅ WebSocket authenticated for user:', user.username);
+    console.log('✅ WebSocket authenticated for user:', (user as any).username);
     return true;
   }
 });
@@ -196,17 +206,17 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
     const projects = await getProjects();
     res.json(projects);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
 app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, res) => {
   try {
     const { limit = 5, offset = 0 } = req.query;
-    const result = await getSessions(req.params.projectName, parseInt(limit), parseInt(offset));
+    const result = await getSessions(req.params.projectName, parseInt(String(limit)), parseInt(String(offset)));
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -217,7 +227,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/messages', authenticateT
     const messages = await getSessionMessages(projectName, sessionId);
     res.json({ messages });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -228,7 +238,7 @@ app.put('/api/projects/:projectName/rename', authenticateToken, async (req, res)
     await renameProject(req.params.projectName, displayName);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -239,7 +249,7 @@ app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, 
     await deleteSession(projectName, sessionId);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -250,7 +260,7 @@ app.delete('/api/projects/:projectName', authenticateToken, async (req, res) => 
     await deleteProject(projectName);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -267,7 +277,7 @@ app.post('/api/projects/create', authenticateToken, async (req, res) => {
     res.json({ success: true, project });
   } catch (error) {
     console.error('Error creating project:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -282,7 +292,7 @@ app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     // Using fsPromises from import
     
     // Security check - ensure the path is safe and absolute
-    if (!filePath || !path.isAbsolute(filePath)) {
+    if (!filePath || typeof filePath !== "string" || !path.isAbsolute(filePath)) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
     
@@ -290,12 +300,12 @@ app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     res.json({ content, path: filePath });
   } catch (error) {
     console.error('Error reading file:', error);
-    if (error.code === 'ENOENT') {
+    if ((error as any).code === 'ENOENT') {
       res.status(404).json({ error: 'File not found' });
-    } else if (error.code === 'EACCES') {
+    } else if ((error as any).code === 'EACCES') {
       res.status(403).json({ error: 'Permission denied' });
     } else {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   }
 });
@@ -312,7 +322,7 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
     // Using mime from import
     
     // Security check - ensure the path is safe and absolute
-    if (!filePath || !path.isAbsolute(filePath)) {
+    if (!filePath || typeof filePath !== "string" || !path.isAbsolute(filePath)) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
     
@@ -341,7 +351,7 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
   } catch (error) {
     console.error('Error serving binary file:', error);
     if (!res.headersSent) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   }
 });
@@ -357,7 +367,7 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     // Using fsPromises from import
     
     // Security check - ensure the path is safe and absolute
-    if (!filePath || !path.isAbsolute(filePath)) {
+    if (!filePath || typeof filePath !== "string" || !path.isAbsolute(filePath)) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
     
@@ -371,7 +381,7 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
       await fsPromises.copyFile(filePath, backupPath);
       console.log('📋 Created backup:', backupPath);
     } catch (backupError) {
-      console.warn('Could not create backup:', backupError.message);
+      console.warn('Could not create backup:', (backupError as Error).message);
     }
     
     // Write the new content
@@ -384,12 +394,12 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
     });
   } catch (error) {
     console.error('Error saving file:', error);
-    if (error.code === 'ENOENT') {
+    if ((error as any).code === 'ENOENT') {
       res.status(404).json({ error: 'File or directory not found' });
-    } else if (error.code === 'EACCES') {
+    } else if ((error as any).code === 'EACCES') {
       res.status(403).json({ error: 'Permission denied' });
     } else {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   }
 });
@@ -420,8 +430,8 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
     const hiddenFiles = files.filter(f => f.name.startsWith('.'));
     res.json(files);
   } catch (error) {
-    console.error('❌ File tree error:', error.message);
-    res.status(500).json({ error: error.message });
+    console.error('❌ File tree error:', error instanceof Error ? error.message : error);
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
@@ -445,13 +455,13 @@ wss.on('connection', (ws, request) => {
 });
 
 // Handle chat WebSocket connections
-function handleChatConnection(ws) {
+function handleChatConnection(ws: ExtendedWebSocket) {
   console.log('💬 Chat WebSocket connected');
   
   // Add to connected clients for project updates
   connectedClients.add(ws);
   
-  ws.on('message', async (message) => {
+  ws.on('message', async (message: any) => {
     try {
       const data = JSON.parse(message);
       
@@ -486,11 +496,11 @@ function handleChatConnection(ws) {
 }
 
 // Handle shell WebSocket connections
-function handleShellConnection(ws) {
+function handleShellConnection(ws: ExtendedWebSocket) {
   console.log('🐚 Shell client connected');
-  let shellProcess = null;
+  let shellProcess: any = null;
   
-  ws.on('message', async (message) => {
+  ws.on('message', async (message: any) => {
     try {
       const data = JSON.parse(message);
       console.log('📨 Shell message received:', data.type);
@@ -793,7 +803,7 @@ Agent instructions:`;
         
       } catch (error) {
         console.error('Transcription error:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
       }
     });
   } catch (error) {
@@ -812,19 +822,19 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
     
     // Configure multer for image uploads
     const storage = multer.diskStorage({
-      destination: async (req, file, cb) => {
-        const uploadDir = path.join(os.tmpdir(), 'claude-ui-uploads', String(req.user.id));
+      destination: async (req: any, file: any, cb: any) => {
+        const uploadDir = path.join(os.tmpdir(), 'claude-ui-uploads', String(req.user?.id || 'unknown'));
         await fs.mkdir(uploadDir, { recursive: true });
         cb(null, uploadDir);
       },
-      filename: (req, file, cb) => {
+      filename: (req: any, file: any, cb: any) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
         cb(null, uniqueSuffix + '-' + sanitizedName);
       }
     });
     
-    const fileFilter = (req, file, cb) => {
+    const fileFilter = (req: any, file: any, cb: any) => {
       const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
       if (allowedMimes.includes(file.mimetype)) {
         cb(null, true);
@@ -855,7 +865,7 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
       try {
         // Process uploaded images
         const processedImages = await Promise.all(
-          req.files.map(async (file) => {
+          (req.files as any[]).map(async (file: any) => {
             // Read file and convert to base64
             const buffer = await fs.readFile(file.path);
             const base64 = buffer.toString('base64');
@@ -877,7 +887,7 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
       } catch (error) {
         console.error('Error processing images:', error);
         // Clean up any remaining files
-        await Promise.all(req.files.map(f => fs.unlink(f.path).catch(() => {})));
+        await Promise.all((req.files as any[]).map((f: any) => fs.unlink(f.path).catch(() => {})));
         res.status(500).json({ error: 'Failed to process images' });
       }
     });
@@ -898,16 +908,16 @@ app.get('*', (req, res) => {
 });
 
 // Helper function to convert permissions to rwx format
-function permToRwx(perm) {
+function permToRwx(perm: number) {
   const r = perm & 4 ? 'r' : '-';
   const w = perm & 2 ? 'w' : '-';
   const x = perm & 1 ? 'x' : '-';
   return r + w + x;
 }
 
-async function getFileTree(dirPath, maxDepth = 3, currentDepth = 0, showHidden = true) {
+async function getFileTree(dirPath: string, maxDepth = 3, currentDepth = 0, showHidden = true): Promise<FileNode[]> {
   // Using fsPromises from import
-  const items = [];
+  const items: FileNode[] = [];
   
   try {
     const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
@@ -922,10 +932,15 @@ async function getFileTree(dirPath, maxDepth = 3, currentDepth = 0, showHidden =
           entry.name === 'build') continue;
       
       const itemPath = path.join(dirPath, entry.name);
-      const item = {
+      const item: FileNode = {
         name: entry.name,
         path: itemPath,
-        type: entry.isDirectory() ? 'directory' : 'file'
+        type: entry.isDirectory() ? 'directory' : 'file',
+        size: 0,
+        modified: undefined,
+        permissions: '000',
+        permissionsRwx: '---------',
+        children: undefined
       };
       
       // Get file stats for additional metadata
@@ -985,9 +1000,9 @@ async function startServer() {
   try {
     // Initialize authentication database
     await initializeDatabase();
-    console.log('✅ Database initialization skipped (testing)');
+    console.log('✅ Database initialization skipped ()');
     
-    server.listen(PORT, '0.0.0.0', async () => {
+    server.listen(Number(PORT), '0.0.0.0', async () => {
       console.log(`Claude Code UI server running on http://0.0.0.0:${PORT}`);
       
       // Start watching the projects folder for changes

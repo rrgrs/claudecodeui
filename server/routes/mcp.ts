@@ -49,7 +49,7 @@ router.get('/cli/list', async (req, res) => {
       console.error('Error running Claude CLI:', error);
       res.status(500).json({ error: 'Failed to run Claude CLI', details: error.message });
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error listing MCP servers via CLI:', error);
     res.status(500).json({ error: 'Failed to list MCP servers', details: error.message });
   }
@@ -121,7 +121,7 @@ router.post('/cli/add', async (req, res) => {
       console.error('Error running Claude CLI:', error);
       res.status(500).json({ error: 'Failed to run Claude CLI', details: error.message });
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error adding MCP server via CLI:', error);
     res.status(500).json({ error: 'Failed to add MCP server', details: error.message });
   }
@@ -164,7 +164,7 @@ router.delete('/cli/remove/:name', async (req, res) => {
       console.error('Error running Claude CLI:', error);
       res.status(500).json({ error: 'Failed to run Claude CLI', details: error.message });
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error removing MCP server via CLI:', error);
     res.status(500).json({ error: 'Failed to remove MCP server', details: error.message });
   }
@@ -207,18 +207,18 @@ router.get('/cli/get/:name', async (req, res) => {
       console.error('Error running Claude CLI:', error);
       res.status(500).json({ error: 'Failed to run Claude CLI', details: error.message });
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error getting MCP server details via CLI:', error);
     res.status(500).json({ error: 'Failed to get MCP server details', details: error.message });
   }
 });
 
 // Helper functions to parse Claude CLI output
-function parseClaudeListOutput(output) {
+function parseClaudeListOutput(output: string) {
   // Parse the output from 'claude mcp list' command
   // Format: "name: command/url" or "name: url (TYPE)"
   const servers = [];
-  const lines = output.split('\n').filter(line => line.trim());
+  const lines = output.split('\n').filter((line: any) => line.trim());
   
   for (const line of lines) {
     if (line.includes(':')) {
@@ -251,7 +251,7 @@ function parseClaudeListOutput(output) {
   return servers;
 }
 
-function parseClaudeGetOutput(output) {
+function parseClaudeGetOutput(output: string): any {
   // Parse the output from 'claude mcp get <name>' command
   // This is a simple parser - might need adjustment based on actual output format
   try {
@@ -262,7 +262,7 @@ function parseClaudeGetOutput(output) {
     }
     
     // Otherwise, parse as text
-    const server = { raw_output: output };
+    const server: any = { raw_output: output };
     const lines = output.split('\n');
     
     for (const line of lines) {
@@ -278,7 +278,7 @@ function parseClaudeGetOutput(output) {
     }
     
     return server;
-  } catch (error) {
+  } catch (error: any) {
     return { raw_output: output, parse_error: error.message };
   }
 }
